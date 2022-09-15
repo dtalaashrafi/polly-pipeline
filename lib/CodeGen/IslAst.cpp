@@ -86,10 +86,10 @@ static cl::opt<bool> DetectParallel("polly-ast-detect-parallel",
                                     cl::cat(PollyCategory));
 
 // pipeline (*) maybe add another flag like DetectPipeline?
-static cl::opt<bool>
-    PollyPipeline("polly-pipeline",
-                  cl::desc("Generate pipeline code"),
-                  cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+static cl::opt<bool> PollyPipeline("polly-pipeline",
+                                   cl::desc("Generate pipeline code"),
+                                   cl::init(false), cl::ZeroOrMore,
+                                   cl::cat(PollyCategory));
 
 STATISTIC(ScopsProcessed, "Number of SCoPs processed");
 STATISTIC(ScopsBeneficial, "Number of beneficial SCoPs");
@@ -123,7 +123,7 @@ struct AstBuildUserInfo {
   /// The last iterator id created for the current SCoP.
   isl_id *LastForNodeId = nullptr;
 
-  //pipeline (*)
+  // pipeline (*)
   bool IsTask = false;
   bool IsInnerMostTask = false;
   // isl_pw_multi_aff *depend_pw = nullptr;
@@ -263,8 +263,7 @@ static bool astScheduleDimIsParallel(const isl::ast_build &Build,
 // - Detection of openmp parallel loops
 //
 static __isl_give isl_id *astBuildBeforeFor(__isl_keep isl_ast_build *Build,
-                                            void *User) 
-{
+                                            void *User) {
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
   IslAstUserPayload *Payload = new IslAstUserPayload();
   isl_id *Id = isl_id_alloc(isl_ast_build_get_ctx(Build), "", Payload);
@@ -313,59 +312,37 @@ astBuildAfterFor(__isl_take isl_ast_node *Node, __isl_keep isl_ast_build *Build,
 
 // pipeline (*)
 
-
-static __isl_give isl_id *astBuildBeforeForPipeline(__isl_keep isl_ast_build *Build,
-                                                    void *User) 
-{
+static __isl_give isl_id *
+astBuildBeforeForPipeline(__isl_keep isl_ast_build *Build, void *User) {
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
   IslAstUserPayload *Payload = new IslAstUserPayload();
   isl_id *Id = isl_id_alloc(isl_ast_build_get_ctx(Build), "", Payload);
   Id = isl_id_set_free_user(Id, freeIslAstUserPayload);
   BuildInfo->LastForNodeId = Id;
 
-  if(BuildInfo->IsTask == 1)
-  {
+  if (BuildInfo->IsTask == 1) {
     Payload->IsTask = true;
   }
 
-  if(BuildInfo->IsInnerMostTask == true)
-  {
+  if (BuildInfo->IsInnerMostTask == true) {
     Payload->IsInnerMostTask = true;
-    // Payload->depend_pw = BuildInfo->depend_pw;
-    errs() << "&&&&&&&&&&&& MAKING fals from astBuildBeforeForPipeline\n";
-    // BuildInfo->IsTask = false;   
     BuildInfo->IsInnerMostTask = false;
   }
- 
+
   return Id;
 }
 
 // TODO: this function should be removed
 static __isl_give isl_ast_node *
-astBuildAfterForPipeline(__isl_take isl_ast_node *Node, __isl_keep isl_ast_build *Build,
-                        void *User) 
-{
-  
+astBuildAfterForPipeline(__isl_take isl_ast_node *Node,
+                         __isl_keep isl_ast_build *Build, void *User) {
+
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
   isl_id *Id = isl_ast_node_get_annotation(Node);
-  // errs() << isl::manage_copy(Node).to_C_str() << "\n**************";
   IslAstUserPayload *Payload = (IslAstUserPayload *)isl_id_get_user(Id);
   Payload->Build = isl_ast_build_copy(Build);
-
-
-  // if(BuildInfo->IsTask == 1)
-  // {
-  //   errs() << "This is a task loop" << "\n\n";
-  //   // prepare it for the next one.
-  //   BuildInfo->IsTask = 0;
-  //   // Payload->IsTask = false;
-
-  //   // return isl_ast_node_set_annotation(Node, Id);
-  // }
-  
   return Node;
 }
-
 
 static isl_stat astBuildBeforeMark(__isl_keep isl_id *MarkId,
                                    __isl_keep isl_ast_build *Build,
@@ -379,39 +356,32 @@ static isl_stat astBuildBeforeMark(__isl_keep isl_id *MarkId,
     BuildInfo->InSIMD = true;
 
   // //pipeline (*)
-  if (strcmp(isl_id_get_name(MarkId), "taskBegin") == 0)
-  {
-    // errs() << "Enter Begin Task\n"; 
-    BuildInfo->IsTask = true; 
+  if (strcmp(isl_id_get_name(MarkId), "taskBegin") == 0) {
+    BuildInfo->IsTask = true;
   }
 
-  if (strcmp(isl_id_get_name(MarkId), "task") == 0)
-  {
-    errs() << "&&&&&&&&&&&& MAKING fals from astBuildBeforeMark\n";
+  if (strcmp(isl_id_get_name(MarkId), "task") == 0) {
     BuildInfo->IsTask = false;
-    BuildInfo->IsInnerMostTask = true; 
-    // BuildInfo->depend_pw = (isl_pw_multi_aff *) isl_id_get_user(MarkId);
+    BuildInfo->IsInnerMostTask = true;
   }
 
   return isl_stat_ok;
 }
 
-static __isl_give isl_ast_node *astBuildAfterMark(__isl_take isl_ast_node *Node,
+static __isl_give isl_ast_node *
+astBuildAfterMark(__isl_take isl_ast_node *Node,
                   __isl_keep isl_ast_build *Build, void *User) {
   assert(isl_ast_node_get_type(Node) == isl_ast_node_mark);
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
-  
+
   auto *Id = isl_ast_node_mark_get_id(Node);
 
   if (strcmp(isl_id_get_name(Id), "SIMD") == 0)
     BuildInfo->InSIMD = false;
 
   // pipeline (*)
-  if (strcmp(isl_id_get_name(Id), "task") == 0)
-  {
-    errs() << "&&&&&&&&&&&&&&&&& MAKING false from astBuildAfterMark\n";
+  if (strcmp(isl_id_get_name(Id), "task") == 0) {
     BuildInfo->IsTask = false;
-
   }
 
   isl_id_free(Id);
@@ -597,8 +567,6 @@ IslAst::IslAst(IslAst &&O)
       Root(std::move(O.Root)) {}
 
 void IslAst::init(const Dependences &D) {
-
-  errs() << "******** Enter Ast init ******** \n\n";
   bool PerformParallelTest = PollyParallel || DetectParallel ||
                              PollyVectorizerChoice != VECTORIZER_NONE;
   auto ScheduleTree = S.getScheduleTree();
@@ -628,37 +596,33 @@ void IslAst::init(const Dependences &D) {
   Build = isl_ast_build_set_at_each_domain(Build, AtEachDomain, nullptr);
 
   // pipeline (*)
-  // setting up Build in case we want pipeline 
-  if(PollyPipeline)
-  {
-    errs() << "CodeGen for pipeline\n";         
-
+  // setting up Build in case we want pipeline
+  if (PollyPipeline) {
     BuildInfo.Deps = &D;
     BuildInfo.InParallelFor = false;
     BuildInfo.InSIMD = false;
 
     Build = isl_ast_build_set_before_each_for(Build, &astBuildBeforeForPipeline,
                                               &BuildInfo);
-    Build = isl_ast_build_set_after_each_for(Build, &astBuildAfterFor, 
-                                             &BuildInfo);
+    Build =
+        isl_ast_build_set_after_each_for(Build, &astBuildAfterFor, &BuildInfo);
 
     Build = isl_ast_build_set_before_each_mark(Build, &astBuildBeforeMark,
                                                &BuildInfo);
 
     Build = isl_ast_build_set_after_each_mark(Build, &astBuildAfterMark,
-                                              &BuildInfo);                          
+                                              &BuildInfo);
   }
 
-  if (PerformParallelTest) 
-  {
+  if (PerformParallelTest) {
     BuildInfo.Deps = &D;
     BuildInfo.InParallelFor = false;
     BuildInfo.InSIMD = false;
 
     Build = isl_ast_build_set_before_each_for(Build, &astBuildBeforeFor,
                                               &BuildInfo);
-    Build = isl_ast_build_set_after_each_for(Build, &astBuildAfterFor, 
-                                             &BuildInfo);
+    Build =
+        isl_ast_build_set_after_each_for(Build, &astBuildAfterFor, &BuildInfo);
 
     Build = isl_ast_build_set_before_each_mark(Build, &astBuildBeforeMark,
                                                &BuildInfo);
@@ -691,7 +655,7 @@ isl::ast_expr IslAstInfo::getRunCondition() { return Ast.getRunCondition(); }
 IslAstUserPayload *IslAstInfo::getNodePayload(const isl::ast_node &Node) {
   isl::id Id = Node.get_annotation();
   if (!Id)
-    return nullptr; 
+    return nullptr;
   IslAstUserPayload *Payload = (IslAstUserPayload *)Id.get_user();
   return Payload;
 }
@@ -706,35 +670,18 @@ bool IslAstInfo::isParallel(const isl::ast_node &Node) {
          IslAstInfo::isOutermostParallel(Node);
 }
 
-
 // pipeline (*)
-bool IslAstInfo::isTask(const isl::ast_node &Node)
-{
+bool IslAstInfo::isTask(const isl::ast_node &Node) {
   IslAstUserPayload *Payload = getNodePayload(Node);
-  errs() << "++++++++++++ isTask check:\n";
-  errs() << "payload istask: " <<  Payload->IsTask << "\n";
   return Payload && Payload->IsTask;
 }
 
-bool IslAstInfo::isInnermostTask(const isl::ast_node &Node)
-{
+bool IslAstInfo::isInnermostTask(const isl::ast_node &Node) {
   auto child = Node.for_get_body();
-  // errs() << "++++++++++++ isInnermostTask check:\n";
-  // errs() << isl_ast_node_get_type(child.get()) << "\n";
-  // child.dump();
-  // errs() << "+++++++++++++++++++++\n";
-  if(isl_ast_node_get_type(child.get()) == 4) //if mark node
+  if (isl_ast_node_get_type(child.get()) == 4) // if mark node
     return true;
 
   return false;
-}
-
-isl_pw_multi_aff *IslAstInfo::getDependPw(const isl::ast_node &Node)
-{
-  errs() << "****** Enter getDependPw\n";
-  // IslAstUserPayload *Payload = getNodePayload(Node);
-  
-  // return Payload->depend_pw;
 }
 
 bool IslAstInfo::isInnermostParallel(const isl::ast_node &Node) {
@@ -777,8 +724,6 @@ isl::union_map IslAstInfo::getSchedule(const isl::ast_node &Node) {
     return {};
 
   isl::ast_build Build = isl::manage_copy(Payload->Build);
-  errs() << "^^^^^^^^^^" << Build.is_null() << "\n";
-  // Build.get_schedule().dump();
 
   return Build.get_schedule();
 }
@@ -805,9 +750,6 @@ static std::unique_ptr<IslAstInfo> runIslAst(
     function_ref<const Dependences &(Dependences::AnalysisLevel)> GetDeps) {
   // Skip SCoPs in case they're already handled by PPCGCodeGeneration.
 
-  errs() << "\n *********** AST generation ***********\n";
-  // errs() << Scop << "\n";
-
   if (Scop.isToBeSkipped())
     return {};
 
@@ -828,7 +770,7 @@ static std::unique_ptr<IslAstInfo> runIslAst(
       Ast->print(dbgs());
   });
 
-  //pipeline (*)
+  // pipeline (*)
   raw_ostream &output = llvm::outs();
   Ast.get()->print(output);
 

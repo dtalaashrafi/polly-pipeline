@@ -97,8 +97,7 @@ bool CodePreparation::runOnFunction(Function &F) {
     return false;
 
   // pipeline (*)
-  if(F.getName().find("compute_function",0) != std::string::npos)
-  {
+  if (F.getName().find("compute_function", 0) != std::string::npos) {
     F.removeFnAttr(Attribute::ReadOnly);
     F.addFnAttr(Attribute::ReadNone);
   }

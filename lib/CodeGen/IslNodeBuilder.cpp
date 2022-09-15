@@ -114,10 +114,9 @@ static cl::opt<std::string>
                            "different loops (yes/no)"),
                   cl::Hidden, cl::init("no"), cl::ZeroOrMore,
                   cl::cat(PollyCategory));
-          
+
 // pipeline (*)
 int SeqLoops = 0;
-
 
 isl::ast_expr IslNodeBuilder::getUpperBound(isl::ast_node For,
                                             ICmpInst::Predicate &Predicate) {
@@ -320,11 +319,6 @@ IslNodeBuilder::getScheduleForAstNode(const isl::ast_node &Node) {
 void IslNodeBuilder::getReferencesInSubtree(const isl::ast_node &For,
                                             SetVector<Value *> &Values,
                                             SetVector<const Loop *> &Loops) {
-
-  errs() << "Enter getReferencesInSubtree\n\n";
-  // errs() << For.to_C_str() << "\n";
-  // errs() << "*********\n";
-
   SetVector<const SCEV *> SCEVs;
   struct SubtreeReferences References = {
       LI, SE, S, ValueMap, Values, SCEVs, getBlockGenerator(), nullptr};
@@ -333,20 +327,17 @@ void IslNodeBuilder::getReferencesInSubtree(const isl::ast_node &For,
   for (const auto &I : IDToValue)
     Values.insert(I.second);
 
-
   // NOTE: this is populated in IslNodeBuilder::addParameters
   for (const auto &I : OutsideLoopIterations)
     Values.insert(cast<SCEVUnknown>(I.second)->getValue());
 
   isl::union_set Schedule = getScheduleForAstNode(For).domain();
-  // errs() << "\n Shcedule: \n";
-  // getScheduleForAstNode(For).domain().dump();
   addReferencesFromStmtUnionSet(Schedule, References);
 
   for (const SCEV *Expr : SCEVs) {
     findValues(Expr, SE, Values);
     findLoops(Expr, Loops);
-  } 
+  }
 
   Values.remove_if([](const Value *V) { return isa<GlobalValue>(V); });
 
@@ -379,12 +370,9 @@ void IslNodeBuilder::getReferencesInSubtree(const isl::ast_node &For,
 }
 
 void IslNodeBuilder::updateValues(ValueMapT &NewValues) {
-  errs() << "Enter update values\n";
-
   SmallPtrSet<Value *, 5> Inserted;
 
   for (const auto &I : IDToValue) {
-    errs() << isl_id_get_name(I.first) << "\n";
     IDToValue[I.first] = NewValues[I.second];
     Inserted.insert(I.second);
   }
@@ -429,15 +417,10 @@ void IslNodeBuilder::createUserVector(__isl_take isl_ast_node *User,
 }
 
 void IslNodeBuilder::createMark(__isl_take isl_ast_node *Node) {
-  errs() << "Enter create mark\n";
   auto *Id = isl_ast_node_mark_get_id(Node);
   auto Child = isl_ast_node_mark_get_node(Node);
   isl_ast_node_free(Node);
   // pipeline (*)
-  // if (strcmp(isl_id_get_name(Id), "task") == 0 )
-  // {
-  //   errs() << "***************** task node mark \n";
-  // }
   // If a child node of a 'SIMD mark' is a loop that has a single iteration,
   // it will be optimized away and we should skip it.
   if (strcmp(isl_id_get_name(Id), "SIMD") == 0 &&
@@ -560,8 +543,6 @@ static bool IsLoopVectorizerDisabled(isl::ast_node Node) {
 }
 
 void IslNodeBuilder::createForSequential(isl::ast_node For, bool MarkParallel) {
-
-  errs() << "Enter for sequential \n\n\n";
   SeqLoops++;
   Value *ValueLB, *ValueUB, *ValueInc;
   Type *MaxType;
@@ -573,8 +554,6 @@ void IslNodeBuilder::createForSequential(isl::ast_node For, bool MarkParallel) {
 
   isl::ast_node Body = For.for_get_body();
 
-  // isl_ast_node_for_is_degenerate(For)
-  //
   // TODO: For degenerated loops we could generate a plain assignment.
   //       However, for now we just reuse the logic for normal loops, which will
   //       create a loop with a single iteration.
@@ -601,8 +580,6 @@ void IslNodeBuilder::createForSequential(isl::ast_node For, bool MarkParallel) {
   if (MaxType != ValueInc->getType())
     ValueInc = Builder.CreateSExt(ValueInc, MaxType);
 
-  errs() << "***************************************************************\n";
-
   // If we can show that LB <Predicate> UB holds at least once, we can
   // omit the GuardBB in front of the loop.
   bool UseGuardBB =
@@ -611,8 +588,6 @@ void IslNodeBuilder::createForSequential(isl::ast_node For, bool MarkParallel) {
                   Predicate, &Annotator, MarkParallel, UseGuardBB,
                   LoopVectorizerDisabled);
   IDToValue[IteratorID.get()] = IV;
-
-  errs() << "***************************************************************\n";
 
   create(Body.release());
 
@@ -670,7 +645,6 @@ static void removeSubFuncFromDomTree(Function *F, DominatorTree &DT) {
 }
 
 void IslNodeBuilder::createForParallel(__isl_take isl_ast_node *For) {
-  errs() << "Enter For parallel\n\n";
   isl_ast_node *Body;
   isl_ast_expr *Init, *Inc, *Iterator, *UB;
   isl_id *IteratorID;
@@ -806,20 +780,12 @@ typedef struct depends {
   isl_pw_multi_aff_list *in_pw; // reads
 } depends;
 
-
 // TODO: take care of the old version
 void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
-  errs() << "Enter for pipeline \n\n\n";
-  errs() << "SEQQ " << SeqLoops << "\n";
- 
   bool sloop = 0;
-  if(SeqLoops < 1)
-  {
-    errs() << "Enter changing sloop\n";
+  if (SeqLoops < 1) {
     sloop = 1;
   }
-
-  
 
   Value *ValueLB, *ValueUB, *ValueInc;
   Type *MaxType;
@@ -828,17 +794,6 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   CmpInst::Predicate Predicate;
 
   bool LoopVectorizerDisabled = 0; // remove it later
-
-  // errs() << "Insert block\n";
-  // Builder.GetInsertBlock()->dump();
-
-  // BasicBlock *ParBB = SplitBlock(Builder.GetInsertBlock(),
-  //                                &*Builder.GetInsertPoint(), &DT, &LI);
-  // ParBB->setName("polly.pipeline.for");
-  // Builder.SetInsertPoint(&ParBB->front());
-
-  // errs() << "splited block\n";
-  // ParBB->dump();
 
   isl::ast_node Body = For.for_get_body();
 
@@ -849,73 +804,49 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   isl::ast_expr UB = getUpperBound(For, Predicate);
 
   // depend_pw
-
-  errs() << "PPPW\n";
   auto pwid = Body.mark_get_id();
-  // errs() << "********************\n";
-  // errs() << pwid.get_name() << "\n";
   auto pw = (depends *)pwid.get_user();
-  
+
   isl_pw_multi_aff *out_depend = pw[0].out_pw;
   isl_pw_multi_aff_list *in_depend = pw[0].in_pw;
   int depend_num = pw->num_in_index;
-  // int dim_count =
-  //     isl_pw_multi_aff_dim(isl_pw_multi_aff_copy(out_depend), isl_dim_out);
-  ///// changing to support different dims.
-  // TODO: might be wrong
   isl_pw_multi_aff *out_depend_diff;
   isl_pw_multi_aff_list *in_depend_diff = isl_pw_multi_aff_list_alloc(
-                                              isl_pw_multi_aff_list_get_ctx(in_depend),depend_num);
+      isl_pw_multi_aff_list_get_ctx(in_depend), depend_num);
 
-  if(sloop == 1)
-  {
-    errs() << "line 872\n";
-    isl_map *map_back_out_1 = isl_map_from_pw_multi_aff(isl_pw_multi_aff_copy(out_depend));
-    // isl_map *map_back_out_1 = isl_map_lexmax(isl_map_project_out(
-    //                             isl_map_project_out(map_back_out, isl_dim_in, 1, 1), isl_dim_out, 1, 1));
-    errs() << "line 876\n";
-    isl_map_dump(map_back_out_1);
+  if (sloop == 1) {
+    isl_map *map_back_out_1 =
+        isl_map_from_pw_multi_aff(isl_pw_multi_aff_copy(out_depend));
+
     // TODO: check for complement
     out_depend_diff = isl_pw_multi_aff_from_map(map_back_out_1);
-    // isl_pw_multi_aff_dump(out_depend_diff);
-    errs() << "line 881\n";
-    for(int i=0 ; i<depend_num ; i++)
-    {
-      errs() << i << "\n";
-      isl_map *map_back_in_1 = isl_map_from_pw_multi_aff(isl_pw_multi_aff_list_get_at(in_depend,i));
-      // isl_map *map_back_in_1 = isl_map_lexmax(isl_map_project_out(
-      //                           isl_map_project_out(map_back_in, isl_dim_in, 1, 1), isl_dim_out, 1, 1));
-      isl_pw_multi_aff_list_add(in_depend_diff, isl_pw_multi_aff_from_map(map_back_in_1));
-      errs() << "end\n";
+    for (int i = 0; i < depend_num; i++) {
+      isl_map *map_back_in_1 =
+          isl_map_from_pw_multi_aff(isl_pw_multi_aff_list_get_at(in_depend, i));
+      isl_pw_multi_aff_list_add(in_depend_diff,
+                                isl_pw_multi_aff_from_map(map_back_in_1));
     }
   }
-  errs() << "End of change\n";
   /////////////////////////////////
   // considering out_depends
   isl_pw_multi_aff *out_depend_copy1;
   isl_pw_multi_aff *out_depend_copy;
-  if(sloop == 1)
-  {
+  if (sloop == 1) {
     out_depend_copy1 = isl_pw_multi_aff_copy(out_depend_diff);
     out_depend_copy = isl_pw_multi_aff_copy(out_depend_diff);
-  }
-  else
-  {
+  } else {
     out_depend_copy1 = isl_pw_multi_aff_copy(out_depend);
     out_depend_copy = isl_pw_multi_aff_copy(out_depend);
   }
   int dim_count =
       isl_pw_multi_aff_dim(isl_pw_multi_aff_copy(out_depend_copy), isl_dim_out);
 
-  // isl_pw_multi_aff_dump(out_depend_copy);
-
   isl_ast_build *dependExpBuild =
       isl_ast_build_from_context(isl_pw_multi_aff_domain((out_depend_copy1)));
   std::vector<isl_ast_expr *> out_depend_dim_vec;
   for (int dim = 0; dim < dim_count; dim++) {
-    errs() << "DDDDIIIIMMMMMM\n";
-    isl_pw_multi_aff *out_depend_copy2 ;
-    if(sloop == 1)
+    isl_pw_multi_aff *out_depend_copy2;
+    if (sloop == 1)
       out_depend_copy2 = isl_pw_multi_aff_copy(out_depend_diff);
     else
       out_depend_copy2 = isl_pw_multi_aff_copy(out_depend);
@@ -926,8 +857,6 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
     isl_ast_expr *astExpr = isl_ast_build_expr_from_pw_aff(
         dependExprBuild_copy2, isl_pw_aff_copy(pw_dim));
 
-    // isl_ast_expr_dump(isl_ast_expr_copy(astExpr));
-
     out_depend_dim_vec.push_back(astExpr);
 
     isl_pw_aff_free(pw_dim);
@@ -936,23 +865,14 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   }
   isl_ast_build_free(dependExpBuild);
   // end of out_depend
-
-  // considering in_depends
-  // auto in_depend_copy2 = isl_pw_multi_aff_list_copy(in_depend);
-  // auto in_depend_copy1 = isl_pw_multi_aff_list_copy(in_depend);
-  // auto in_depend_copy = isl_pw_multi_aff_list_copy(in_depend);
-
-  // int in_depend_num = isl_pw_multi_aff_list_size(in_depend); 
   std::vector<std::vector<isl_ast_expr *>> in_depend_dim_vecs;
   std::vector<int> in_depend_dims;
 
-  for (int i = 0; i < depend_num; i++) 
-  {
-    // errs() << "********** IN DEPENDS:\n";
+  for (int i = 0; i < depend_num; i++) {
     std::vector<isl_ast_expr *> temp_vec;
 
     isl_pw_multi_aff *in_depend_i;
-    if(sloop == 1)
+    if (sloop == 1)
       in_depend_i = isl_pw_multi_aff_list_get_at(in_depend_diff, i);
     else
       in_depend_i = isl_pw_multi_aff_list_get_at(in_depend, i);
@@ -1014,18 +934,10 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
                   LoopVectorizerDisabled);
 
   // from making parallel for
-
-  errs() << "Insert block\n";
-  Builder.GetInsertBlock()->dump();
-
   BasicBlock *ParBB = SplitBlock(Builder.GetInsertBlock(),
                                  &*Builder.GetInsertPoint(), &DT, &LI);
   ParBB->setName("polly.pipeline.for");
   Builder.SetInsertPoint(&ParBB->front());
-
-  errs() << "splited block\n";
-  ParBB->dump();
-
   IDToValue[IteratorID.get()] = IV;
 
   BasicBlock::iterator LoopBody;
@@ -1052,17 +964,11 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   // out_depends
   std::vector<Value *> depend_expr_builder;
   for (int dim = 0; dim < dim_count; dim++) {
-    // errs() << "@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#\n";
-    // errs() << isl_ast_expr_to_C_str(out_depend_dim_vec[dim]) << "\n";
-    // isl_id_dump(isl_ast_expr_get_id(out_depend_dim_vec[dim]));
     depend_expr_builder.push_back(ExprBuilder.create(out_depend_dim_vec[dim]));
-    // isl_ast_expr_free(out_depend_dim_vec[dim]);
   }
-  errs() << "EXIT loop\n";
   // in_depends
   std::vector<std::vector<Value *>> in_depend_expr_builder;
-  for (int num = 0; num < depend_num; num++) 
-  {
+  for (int num = 0; num < depend_num; num++) {
     std::vector<Value *> temp;
     for (int dim = 0; dim < in_depend_dims[num]; dim++)
       temp.push_back(ExprBuilder.create(in_depend_dim_vecs[num][dim]));
@@ -1070,12 +976,6 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   }
 
   // depends end
-
-  errs() << "############################\n";
-  // !!!! VERY IMPORTANT
-  // GENERALIZE THIS PART
-  // PARAMETRIC CONSIDERATION, MORE THAT TWO DIMS.
-  // GENERALIZE ON DIM.
   Function *F = Builder.GetInsertBlock()->getParent();
   LLVMContext &Context = F->getContext();
   auto int_type = llvm::IntegerType::getInt64Ty(Context);
@@ -1083,114 +983,111 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
 
   Value *out_depend_val;
 
-  if(sloop == 1)
-  {
-    out_depend_val = Builder.CreateMul(depend_expr_builder[0], ConstantInt::get(int_type, 100000000), "polly.depend.final");
-  }
-  else
-  {
-    auto out_depend1 = Builder.CreateMul(depend_expr_builder[0], ConstantInt::get(int_type, 100000000), "polly.depend");
-    out_depend_val = Builder.CreateAdd(out_depend1, depend_expr_builder[1], "polly.depend.final"); // pass this
+  if (sloop == 1) {
+    out_depend_val = Builder.CreateMul(depend_expr_builder[0],
+                                       ConstantInt::get(int_type, 100000000),
+                                       "polly.depend.final");
+  } else {
+    auto out_depend1 = Builder.CreateMul(depend_expr_builder[0],
+                                         ConstantInt::get(int_type, 100000000),
+                                         "polly.depend");
+    out_depend_val = Builder.CreateAdd(out_depend1, depend_expr_builder[1],
+                                       "polly.depend.final"); // pass this
   }
 
   auto out_index1 = Builder.CreateAlloca(int_type32);
-  Value *out_index = Builder.CreateAdd(ConstantInt::get(int_type32, pw->out_index), ConstantInt::get(int_type32, 0), "polly.out.depend.index");
-
-  errs() << "&&&&&&&&&&&&&&&&&&&&&&&&& OUT INDEX " << pw->out_index << "\n"; 
+  Value *out_index = Builder.CreateAdd(
+      ConstantInt::get(int_type32, pw->out_index),
+      ConstantInt::get(int_type32, 0), "polly.out.depend.index");
 
   // /// ///
   // should not add them wiht builder, add them to an array, and add the array
-  // to the program. 
+  // to the program.
   // TMEP
 
   Value *in_depend_val; // should be an array
-  Value *in_index; // should be an array
+  Value *in_index;      // should be an array
   AllocaInst *in_depend_arr;
   AllocaInst *in_index_arr;
-  
-  if(depend_num != 0)
-  {
-    in_depend_arr = Builder.CreateAlloca(int_type, ConstantInt::get(int_type, depend_num), "polly.in.depend.arr");
-    in_index_arr = Builder.CreateAlloca(int_type32, ConstantInt::get(int_type32, depend_num), "polly.in.index.arr");
-  }
-  else
-  {
-    in_depend_arr = Builder.CreateAlloca(int_type, ConstantInt::get(int_type, 1), "polly.in.depend.arr");
-    in_index_arr = Builder.CreateAlloca(int_type32, ConstantInt::get(int_type32, 1), "polly.in.index.arr");
+
+  if (depend_num != 0) {
+    in_depend_arr =
+        Builder.CreateAlloca(int_type, ConstantInt::get(int_type, depend_num),
+                             "polly.in.depend.arr");
+    in_index_arr = Builder.CreateAlloca(
+        int_type32, ConstantInt::get(int_type32, depend_num),
+        "polly.in.index.arr");
+  } else {
+    in_depend_arr = Builder.CreateAlloca(
+        int_type, ConstantInt::get(int_type, 1), "polly.in.depend.arr");
+    in_index_arr = Builder.CreateAlloca(
+        int_type32, ConstantInt::get(int_type32, 1), "polly.in.index.arr");
   }
 
-  // errs() << "**********************************************\n";
-  in_depend_arr->getArraySize()->dump(); 
-
-  if(pw->is_source_only != 1)
-  {
-    errs() << "ENTER IF\n";
-    for (int num = 0; num < depend_num; num++)
-    {
-      if(sloop == 1)
-      {
-        in_depend_val = Builder.CreateMul(in_depend_expr_builder[num][0], ConstantInt::get(int_type, 100000000));
+  if (pw->is_source_only != 1) {
+    for (int num = 0; num < depend_num; num++) {
+      if (sloop == 1) {
+        in_depend_val =
+            Builder.CreateMul(in_depend_expr_builder[num][0],
+                              ConstantInt::get(int_type, 100000000));
+      } else {
+        auto in_depend1 =
+            Builder.CreateMul(in_depend_expr_builder[num][0],
+                              ConstantInt::get(int_type, 100000000));
+        in_depend_val = Builder.CreateAdd(
+            in_depend1, in_depend_expr_builder[num][1],
+            "polly.depend"); // add this to the passed array somehow
       }
-      else
-      {
-        auto in_depend1 = Builder.CreateMul(in_depend_expr_builder[num][0], ConstantInt::get(int_type, 100000000));
-        in_depend_val = Builder.CreateAdd(in_depend1, in_depend_expr_builder[num][1], "polly.depend"); // add this to the passed array somehow
-      }
-      auto in_temp = Builder.CreateGEP(int_type, in_depend_arr, ConstantInt::get(int_type, num), "polly.in.depend.temp");
+      auto in_temp = Builder.CreateGEP(int_type, in_depend_arr,
+                                       ConstantInt::get(int_type, num),
+                                       "polly.in.depend.temp");
       auto stored = Builder.CreateStore(in_depend_val, in_temp);
     }
 
-    for(int num=0 ; num < depend_num ; num++)
-    {
+    for (int num = 0; num < depend_num; num++) {
       auto in_index1 = Builder.CreateAlloca(int_type32);
-      // errs() << "&&&&&&&&&&&&&&&&&&&& INDEX" << pw->in_index[num] << "\n";
-      in_index = Builder.CreateAdd(ConstantInt::get(int_type32, pw->in_index[num]), ConstantInt::get(int_type32, 0), "polly.in.depend.index");
-      // in_index->dump();
-      auto in_temp = Builder.CreateGEP(int_type32, in_index_arr, ConstantInt::get(int_type32, num), "polly.in.index.temp");
+      in_index = Builder.CreateAdd(
+          ConstantInt::get(int_type32, pw->in_index[num]),
+          ConstantInt::get(int_type32, 0), "polly.in.depend.index");
+      auto in_temp = Builder.CreateGEP(int_type32, in_index_arr,
+                                       ConstantInt::get(int_type32, num),
+                                       "polly.in.index.temp");
       auto stored = Builder.CreateStore(in_index, in_temp);
     }
-  }
-  else // source only
+  } else // source only
   {
     auto in_depend1 = Builder.CreateAlloca(int_type);
-    in_depend_val = Builder.CreateAdd(ConstantInt::get(int_type, -2), ConstantInt::get(int_type, 0)); 
-    auto in_temp = Builder.CreateGEP(int_type, in_depend_arr, ConstantInt::get(int_type, 0), "polly.in.depend.temp");
+    in_depend_val = Builder.CreateAdd(ConstantInt::get(int_type, -2),
+                                      ConstantInt::get(int_type, 0));
+    auto in_temp = Builder.CreateGEP(int_type, in_depend_arr,
+                                     ConstantInt::get(int_type, 0),
+                                     "polly.in.depend.temp");
     auto stored = Builder.CreateStore(in_depend_val, in_temp);
-    
+
     auto in_index1 = Builder.CreateAlloca(int_type32);
-    in_index = Builder.CreateAdd(ConstantInt::get(int_type32, -1), ConstantInt::get(int_type32, 0), "polly.in.depend.index");
-    auto in_temp_index = Builder.CreateGEP(int_type32, in_index_arr, ConstantInt::get(int_type32, 0), "polly.in.index.temp");
+    in_index = Builder.CreateAdd(ConstantInt::get(int_type32, -1),
+                                 ConstantInt::get(int_type32, 0),
+                                 "polly.in.depend.index");
+    auto in_temp_index = Builder.CreateGEP(int_type32, in_index_arr,
+                                           ConstantInt::get(int_type32, 0),
+                                           "polly.in.index.temp");
     auto stored_index = Builder.CreateStore(in_index, in_temp_index);
   }
 
   Value *depend_num_val_1 = Builder.CreateAlloca(int_type32);
-  Value *depend_num_val = Builder.CreateAdd(ConstantInt::get(int_type32, depend_num) , ConstantInt::get(int_type32, 0));
+  Value *depend_num_val =
+      Builder.CreateAdd(ConstantInt::get(int_type32, depend_num),
+                        ConstantInt::get(int_type32, 0));
 
   BasicBlock *PrevDependBB = Builder.GetInsertBlock();
 
-  // // getting loops IVs.
-  // SetVector<Value *> DependValues;
-  // for (const auto &I : IDToValue)
-  //   DependValues.insert(I.second);
-  // DependValues.insert(IV);
-
-
-  // ParallelLoopGenPtr->createGetDependFn(ValueLB, ValueUB, ValueInc,
-  // DependValues, NewValues, &LoopBody); depends end
-  // auto in_depend_pass = Builder.CreateGEP(int_type, in_depend_arr, ConstantInt::get(int_type, 0));
-  // auto in_index_pass = Builder.CreateGEP(int_type32, in_index_arr, ConstantInt::get(int_type, 0));
-
   Builder.SetInsertPoint(PrevDependBB->getTerminator());
 
-  ParallelLoopGenPtr->createPipelineLoop(ValueLB, ValueUB, ValueInc, SubtreeValues, NewValues, &LoopBody,
-                                         out_depend_val, out_index, in_depend_arr, in_index_arr, depend_num_val);  
+  ParallelLoopGenPtr->createPipelineLoop(
+      ValueLB, ValueUB, ValueInc, SubtreeValues, NewValues, &LoopBody,
+      out_depend_val, out_index, in_depend_arr, in_index_arr, depend_num_val);
 
   Builder.SetInsertPoint(&*LoopBody);
-
-  // errs() << "FROM NODE BUILDER\n";
-  // Builder.GetInsertBlock()->getParent()->dump();
-
-  // IDToValue[IteratorID.get()] = IV;
 
   // Remember the parallel subfunction
   ParallelSubfunctions.push_back(LoopBody->getFunction());
@@ -1207,30 +1104,18 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   Annotator.addAlternativeAliasBases(NewValuesReverse);
 
   // depend free
-  if(sloop == 1)
-  {
-  }
-  else
-  {
+  if (sloop == 1) {
+  } else {
     isl_pw_multi_aff_free(pw[0].out_pw);
     isl_pw_multi_aff_list_free(pw[0].in_pw);
     isl_pw_multi_aff_free(out_depend);
     isl_pw_multi_aff_free(out_depend_copy);
-    // isl_pw_multi_aff_free(out_depend_diff);
-    // isl_pw_multi_aff_list_free(in_depend_diff);
     free(pw);
   }
   // depend free end
 
-  // errs() << "Begin create body\n";
-  // errs() << "FROM NODE BUILDER\n";
-  // Builder.GetInsertBlock()->getParent()->dump();
-  // errs() << "\n";
   create(Body.release());
   SeqLoops = 0;
-  // errs() << "Finish create body ***********\n";
-
-  // (*LoopBody).getParent()->getParent()->dump();
 
   Annotator.resetAlternativeAliasBases();
   // Restore the original values.
@@ -1244,213 +1129,6 @@ void IslNodeBuilder::createForPipeline(isl::ast_node For, bool MarkParallel) {
   Builder.SetInsertPoint(&ExitBlock->front());
   // SequentialLoops++;
 }
-
-// void IslNodeBuilder::createForPipeline_old(isl::ast_node For, bool
-// MarkParallel)
-// {
-//   errs() << "Enter for pipeline \n\n\n";
-//   Value *ValueLB, *ValueUB, *ValueInc;
-//   Type *MaxType;
-//   BasicBlock *ExitBlock;
-//   Value *IV;
-//   CmpInst::Predicate Predicate;
-
-//   bool LoopVectorizerDisabled = 0; //remove it later
-
-//   BasicBlock *ParBB = SplitBlock(Builder.GetInsertBlock(),
-//                                  &*Builder.GetInsertPoint(), &DT, &LI);
-//   ParBB->setName("polly.pipeline.for");
-//   Builder.SetInsertPoint(&ParBB->front());
-
-//   isl::ast_node Body = For.for_get_body();
-
-//   isl::ast_expr Init = For.for_get_init();
-//   isl::ast_expr Inc = For.for_get_inc();
-//   isl::ast_expr Iterator = For.for_get_iterator();
-//   isl::id IteratorID = Iterator.get_id();
-//   isl::ast_expr UB = getUpperBound(For, Predicate);
-
-//   // depend_pw
-
-//   errs() << "PPPW\n";
-//   auto pwid = Body.mark_get_id();
-//   errs() << pwid.get_name() << "\n";
-//   auto pw = (struct dummys*) pwid.get_user();
-//   isl_pw_multi_aff *depend_pw = pw[0].d;
-//   int in_out = pw[0].in_out;
-//   auto depend_pw_copy1 = isl_pw_multi_aff_copy(depend_pw);
-//   auto depend_pw_copy = isl_pw_multi_aff_copy(depend_pw);
-
-//   int dim_count = isl_pw_multi_aff_dim(isl_pw_multi_aff_copy(depend_pw_copy),
-//   isl_dim_out); isl_ast_build *dependExpBuild =
-//   isl_ast_build_from_context(isl_pw_multi_aff_domain((depend_pw_copy1)));
-
-//   // isl_ast_expr *dependExpr =
-//   isl_ast_build_call_from_pw_multi_aff(dependExpBuild,
-//   isl_pw_multi_aff_copy(depend_pw));
-//   // errs() << isl_ast_expr_to_C_str(dependExpr) << "\n";
-
-//   // isl_ast_expr_free(dependExpr);
-
-//   std::vector<isl_ast_expr*> depend_pw_dim_vec;
-//   for(int dim=0; dim < dim_count; dim++)
-//   {
-//     auto depend_pw_copy2 = isl_pw_multi_aff_copy(depend_pw);
-//     auto dependExprBuild_copy2 = isl_ast_build_copy(dependExpBuild);
-
-//     isl_pw_aff *pw_dim = isl_pw_multi_aff_get_pw_aff(depend_pw_copy2, dim);
-//     isl_ast_expr *astExpr =
-//     isl_ast_build_expr_from_pw_aff(dependExprBuild_copy2,
-//     isl_pw_aff_copy(pw_dim));
-
-//     depend_pw_dim_vec.push_back(astExpr);
-
-//     isl_pw_aff_free(pw_dim);
-//     isl_pw_multi_aff_free(depend_pw_copy2);
-//     isl_ast_build_free(dependExprBuild_copy2);
-//   }
-
-//   // depend end
-
-//   ValueLB = ExprBuilder.create(Init.release());
-//   ValueUB = ExprBuilder.create(UB.release());
-//   ValueInc = ExprBuilder.create(Inc.release());
-
-//   MaxType = ExprBuilder.getType(Iterator.get());
-//   MaxType = ExprBuilder.getWidestType(MaxType, ValueLB->getType());
-//   MaxType = ExprBuilder.getWidestType(MaxType, ValueUB->getType());
-//   MaxType = ExprBuilder.getWidestType(MaxType, ValueInc->getType());
-
-//   if (MaxType != ValueLB->getType())
-//     ValueLB = Builder.CreateSExt(ValueLB, MaxType);
-//   if (MaxType != ValueUB->getType())
-//     ValueUB = Builder.CreateSExt(ValueUB, MaxType);
-//   if (MaxType != ValueInc->getType())
-//     ValueInc = Builder.CreateSExt(ValueInc, MaxType);
-
-//   // If we can show that LB <Predicate> UB holds at least once, we can
-//   // omit the GuardBB in front of the loop.
-//   bool UseGuardBB =
-//       !SE.isKnownPredicate(Predicate, SE.getSCEV(ValueLB),
-//       SE.getSCEV(ValueUB));
-//   IV = createLoop(ValueLB, ValueUB, ValueInc, Builder, LI, DT, ExitBlock,
-//                   Predicate, &Annotator, MarkParallel, UseGuardBB,
-//                   LoopVectorizerDisabled);
-
-//   // from making parallel for
-
-//   IDToValue[IteratorID.get()] = IV;
-
-//   BasicBlock::iterator LoopBody;
-//   ValueMapT NewValues;
-
-//   SetVector<Value *> SubtreeValues;
-//   SetVector<const Loop *> Loops;
-
-//   getReferencesInSubtree(For, SubtreeValues, Loops);
-
-//   for (const Loop *L : Loops) {
-//     Value *LoopInductionVar = materializeNonScopLoopInductionVariable(L);
-//     SubtreeValues.insert(LoopInductionVar);
-//   }
-//   // add IV as another argument to the sub function
-//   SubtreeValues.insert(IV);
-
-//   // TODO: have a new class for the pipeline backend and change this.
-//   std::unique_ptr<ParallelLoopGenerator> ParallelLoopGenPtr;
-//   ParallelLoopGenPtr.reset(new ParallelLoopGeneratorGOMP(Builder, LI, DT,
-//   DL));
-
-//   // depends
-
-//   std::vector<Value *> depend_expr_builder;
-
-//   for(int dim=0; dim < dim_count; dim++)
-//   {
-//     errs() << isl_ast_expr_to_C_str(depend_pw_dim_vec[dim]) << "\n";
-//     // isl_id_dump(isl_ast_expr_get_id(depend_pw_dim_vec[dim]));
-//     depend_expr_builder.push_back(ExprBuilder.create(depend_pw_dim_vec[dim]));
-//     // isl_ast_expr_free(depend_pw_dim_vec[dim]);
-//   }
-
-//   errs() << "############################\n";
-//   // GENERALIZE THIS PART
-//   // PARAMETRIC CONSIDERATION, MORE THAT TWO DIMS.
-//   Function *F = Builder.GetInsertBlock()->getParent();
-//   LLVMContext &Context = F->getContext();
-//   auto int_type = llvm::IntegerType::getInt64Ty(Context);
-//   auto int_type32 = llvm::IntegerType::getInt32Ty(Context);
-//   auto depend1 = Builder.CreateMul(depend_expr_builder[0],
-//   ConstantInt::get(int_type, 10000), "polly.depend"); auto depend_val =
-//   Builder.CreateAdd(depend1, depend_expr_builder[1], "polly.depend.final");
-//   //pass this auto depend_inout1 = Builder.CreateAlloca(int_type32);
-//   // auto depend_inout = Builder.CreateStore(ConstantInt::get(int_type32,
-//   in_out) , depend_inout1); //pass this as inout auto depend_inout =
-//   Builder.CreateAdd(ConstantInt::get(int_type32, in_out) ,
-//   ConstantInt::get(int_type32,0) , "polly.depend.inout");
-
-//   BasicBlock *PrevDependBB = Builder.GetInsertBlock();
-
-//   // getting loops IVs.
-//   SetVector<Value *> DependValues;
-//   for (const auto &I : IDToValue)
-//     DependValues.insert(I.second);
-//   DependValues.insert(IV);
-
-//   // ParallelLoopGenPtr->createGetDependFn(ValueLB, ValueUB, ValueInc,
-//   DependValues, NewValues, &LoopBody);
-//   // depends end
-
-//   Builder.SetInsertPoint(PrevDependBB->getTerminator());
-
-//   ParallelLoopGenPtr->createPipelineLoop(ValueLB, ValueUB, ValueInc,
-//   SubtreeValues, NewValues, &LoopBody, depend_val, depend_inout);
-//   Builder.SetInsertPoint(&*LoopBody);
-
-//   // IDToValue[IteratorID.get()] = IV;
-
-//   // Remember the parallel subfunction
-//   ParallelSubfunctions.push_back(LoopBody->getFunction());
-
-//   auto ValueMapCopy = ValueMap;
-//   IslExprBuilder::IDToValueTy IDToValueCopy = IDToValue;
-//   updateValues(NewValues);
-
-//   ValueMapT NewValuesReverse;
-
-//   for (auto P : NewValues)
-//     NewValuesReverse[P.second] = P.first;
-
-//   Annotator.addAlternativeAliasBases(NewValuesReverse);
-
-//   // depend free
-//   isl_pw_multi_aff_free(pw[0].d);
-//   isl_ast_build_free(dependExpBuild);
-//   isl_pw_multi_aff_free(depend_pw);
-//   isl_pw_multi_aff_free(depend_pw_copy);
-//   free(pw);
-//   // depend free end
-
-//   errs() << "Begin create body\n";
-//   create(Body.release());
-//   errs() << "Finish create body ***********\n";
-
-//   // (*LoopBody).getParent()->getParent()->dump();
-
-//   Annotator.resetAlternativeAliasBases();
-//   // Restore the original values.
-//   ValueMap = ValueMapCopy;
-//   IDToValue = IDToValueCopy;
-
-//   Annotator.popLoop(MarkParallel);
-
-//   IDToValue.erase(IDToValue.find(IteratorID.get()));
-
-//   Builder.SetInsertPoint(&ExitBlock->front());
-
-//   SequentialLoops++;
-// }
-
 /// Return whether any of @p Node's statements contain partial accesses.
 ///
 /// Partial accesses are not supported by Polly's vector code generator.
@@ -1479,18 +1157,11 @@ static bool hasPartialAccesses(__isl_take isl_ast_node *Node) {
 }
 
 void IslNodeBuilder::createFor(__isl_take isl_ast_node *For) {
-  // errs() << "Enter For high level\n\n";
-  errs() << isl::manage_copy(For).to_C_str() << "\n";
-  
   // pipeline (*)
-  if(PipelineBuild == "yes")
-  {
+  if (PipelineBuild == "yes") {
     if (IslAstInfo::isTask(isl::manage_copy(For)) &&
         IslAstInfo::isInnermostTask(isl::manage_copy(For))) {
-      errs() << "*********************************************** Begin task loop\n\n";
       createForPipeline(isl::manage(For), 0);
-      // createForParallel(For);
-      errs() << "*********************************************** Exit task loop\n\n";
       return;
     }
   }

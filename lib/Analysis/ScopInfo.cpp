@@ -2367,13 +2367,7 @@ isl::union_map Scop::getSchedule() const {
 }
 
 isl::schedule Scop::getScheduleTree() const {
-
-  // errs() << "&&&&&&&&&&&&&&&\n";
-  // errs() << Schedule.get_domain() << "\n";
-  // errs() << "&&&&&&&&&&&&&&&\n";
-
   return Schedule.intersect_domain(getDomains());
-  // return Schedule;
 }
 
 void Scop::setSchedule(isl::union_map NewSchedule) {
@@ -2384,12 +2378,7 @@ void Scop::setSchedule(isl::union_map NewSchedule) {
 }
 
 void Scop::setScheduleTree(isl::schedule NewSchedule) {
-  // errs() << "Enter set schedule" << "\n";
-
   Schedule = NewSchedule;
-
-  // Schedule.dump();
-
   ScheduleModified = true;
 }
 
@@ -2657,27 +2646,6 @@ isl::map get_blocks_per_one_pipeline_relation(isl::set s, isl::map m,
   return E;
 }
 
-void Scop::multiStmt()
-{
- /* std::vector< std::vector<ScopStmt *> > stmts_per_loop;
-
-  for(auto stmt1 = begin() ; stmt1 != end() ; stmt1++)
-  { 
-    std::vector<ScopStmt *> temp;
-    temp.push_back(*stmt1);
-
-    for(auto stmt2 = std::next(stmt1,1) ; stmt2 != end() ; stmt2++)
-      if(stmt1->getSurroundingLoop() == stmt2->getSurroundingLoop())
-      {
-        errs() << "SAME SUrrounding:\n";
-        // temp.push_back(stmt2);
-      }
-
-    // stmts_per_loop.push_back(temp);
-  } */
-}
-
-
 void Scop::getPipelineGraph() {
   auto s_acc_func = access_functions();
   std::vector<MemoryAccess *> read_list;
@@ -2705,7 +2673,6 @@ void Scop::getPipelineGraph() {
 }
 
 void Scop::getPipelineRelations() {
-  errs() << "--------------------------\n";
   for (auto v : pipeline_graph) {
     auto v1 = v.first;
     auto v2 = v.second;
@@ -2715,84 +2682,58 @@ void Scop::getPipelineRelations() {
     auto wr_dom_map = wr_stmt->getDomain().flatten_map();
     auto rd_map = v1->getLatestAccessRelation().apply_domain(rd_dom_map);
     auto wr_map = v2->getLatestAccessRelation().apply_domain(wr_dom_map);
-
     isl::map single_T = get_one_pipeline_relation(rd_map, wr_map);
-
-    errs() << "*****************PIPELINE MAP T\n";
-    single_T.coalesce().dump();
-
     rd_stmt->reader_T.push_back(single_T);
-    rd_stmt->sources_domain.push_back(wr_stmt->getDomain()); 
-    rd_stmt->sources_id.push_back(wr_stmt->pipeline_id); 
+    rd_stmt->sources_domain.push_back(wr_stmt->getDomain());
+    rd_stmt->sources_id.push_back(wr_stmt->pipeline_id);
     wr_stmt->writer_T.push_back(single_T);
   }
 }
 
 void Scop::getPipelineBlocks() {
   for (auto stmt = begin(); stmt != end(); stmt++) {
-    errs() << stmt->getBaseName() << "\n";
     auto dom = (*stmt).getDomain();
     for (auto wt : (*stmt).writer_T) {
       auto E_single = get_blocks_per_one_pipeline_relation(dom, wt, 0);
-      errs() << "*****************Source MAP\n";
-      E_single.coalesce().dump();
       (*stmt).E_blockings.push_back(E_single);
     }
 
     for (auto rt : (*stmt).reader_T) {
       auto F_single = get_blocks_per_one_pipeline_relation(dom, rt, 1);
-      errs() << "*****************Target MAP \n";
-      F_single.coalesce().dump();
       (*stmt).F_blockings.push_back(F_single);
     }
   }
 }
 
-void Scop::getFinalF() 
-{
-  for (auto stmt = begin(); stmt != end(); stmt++) 
-  {
-    if((stmt->F_blockings).size() == 0 ) // when it does not depend on anything
+void Scop::getFinalF() {
+  for (auto stmt = begin(); stmt != end(); stmt++) {
+    if ((stmt->F_blockings).size() == 0) // when it does not depend on anything
       continue;
 
     for (auto f : (*stmt).F_blockings)
       stmt->F_blockings[0] = stmt->F_blockings[0].unite(f);
 
     stmt->final_F = stmt->F_blockings[0].lexmin();
-    
   }
 }
 
-void Scop::getFinalE() 
-{
-  for (auto stmt = begin(); stmt != end(); stmt++) 
-  {
-    errs() << "size:  " << (stmt->E_blockings).size() << "\n";
-    if((stmt->E_blockings).size() != 0 ) // when nothing depends on it
+void Scop::getFinalE() {
+  for (auto stmt = begin(); stmt != end(); stmt++) {
+    if ((stmt->E_blockings).size() != 0) // when nothing depends on it
     {
-      for (auto e : (*stmt).E_blockings)
-      {
-        errs() << "ee \n";
+      for (auto e : (*stmt).E_blockings) {
         stmt->E_blockings[0] = stmt->E_blockings[0].unite(e);
       }
 
-      if((stmt->F_blockings).size() != 0)
+      if ((stmt->F_blockings).size() != 0)
         stmt->E_blockings[0] = stmt->E_blockings[0].unite(stmt->final_F);
       stmt->final_E = stmt->E_blockings[0].lexmin();
-    }
-    else // TODO: (check this statement) when E is empty, F is not empty
+    } else // when E is empty, F is not empty
       stmt->final_E = stmt->final_F;
-    
-    errs() << "****************Final E\n";
-    stmt->final_E.coalesce().dump();
-
   }
-
-
 }
 
-void Scop::getSelfDependency()
-{
+void Scop::getSelfDependency() {
   printf("self dependencies\n");
   auto s_acc_func = access_functions();
   std::vector<MemoryAccess *> read_list;
@@ -2808,71 +2749,54 @@ void Scop::getSelfDependency()
   }
 
   for (auto read : read_list)
-    for (auto write : write_list)
-    {
+    for (auto write : write_list) {
       auto read_acc = read->getAccessRelation();
       auto write_acc = write->getAccessRelation();
 
-      if (read_acc.get_tuple_name(isl::dim::out) == write_acc.get_tuple_name(isl::dim::out) &&
-          read_acc.get_tuple_name(isl::dim::in) == write_acc.get_tuple_name(isl::dim::in) &&
-          read_acc.is_equal(write_acc) == 0)
-              {
-                auto stmt = read->getStatement();
-                auto dom_map = stmt->getDomain().flatten_map();
-                auto rd_map = read_acc.apply_domain(dom_map);
-                auto wr_map = write_acc.apply_domain(dom_map);
-                auto write_reverse = wr_map.reverse();
-                auto k = rd_map.apply_range(write_reverse);
-                // get the block it belongs to.
-                k = k.apply_domain(stmt->final_E);
-                k = k.reverse().apply_domain(stmt->final_E);
-                stmt->read_dependency_maps.push_back(k.lexmax().reverse());
-                stmt->sources_id.push_back(stmt->pipeline_id); 
-                stmt->sources_domain.push_back(stmt->getDomain());
-              }
+      if (read_acc.get_tuple_name(isl::dim::out) ==
+              write_acc.get_tuple_name(isl::dim::out) &&
+          read_acc.get_tuple_name(isl::dim::in) ==
+              write_acc.get_tuple_name(isl::dim::in) &&
+          read_acc.is_equal(write_acc) == 0) {
+        auto stmt = read->getStatement();
+        auto dom_map = stmt->getDomain().flatten_map();
+        auto rd_map = read_acc.apply_domain(dom_map);
+        auto wr_map = write_acc.apply_domain(dom_map);
+        auto write_reverse = wr_map.reverse();
+        auto k = rd_map.apply_range(write_reverse);
+        // get the block it belongs to.
+        k = k.apply_domain(stmt->final_E);
+        k = k.reverse().apply_domain(stmt->final_E);
+        stmt->read_dependency_maps.push_back(k.lexmax().reverse());
+        stmt->sources_id.push_back(stmt->pipeline_id);
+        stmt->sources_domain.push_back(stmt->getDomain());
+      }
     }
-
-  //       // edges.push_back(std::pair<MemoryAccess *, MemoryAccess *>(read, write));
-
 }
 
-void Scop::getDependencyMaps()
-{
+void Scop::getDependencyMaps() {
 
-  errs() << "Enter get depends\n";
-  
-  for(auto stmt = begin() ; stmt != end() ; stmt++)
-  {
+  for (auto stmt = begin(); stmt != end(); stmt++) {
     auto E = stmt->final_E.range().flatten_map();
     stmt->write_dependency_map = E;
-    if(stmt->F_blockings.size() != 0)
-    {
+    if (stmt->F_blockings.size() != 0) {
       auto Rf_map = stmt->final_F.range().flatten_map();
-      // auto Rf_map = stmt->final_E.range().flatten_map().coalesce();
-      
       std::vector<isl::map> depend_maps; // map S
 
-      for(int i = 0 ; i < stmt->reader_T.size() ; i++)
-      {
+      for (int i = 0; i < stmt->reader_T.size(); i++) {
         auto Rf_map_1 = Rf_map.apply_domain(stmt->F_blockings[i]);
-        // auto Rf_map_1 = stmt->F_blockings[i].apply_domain(Rf_map).coalesce();
 
         Rf_map_1 = Rf_map_1.apply_domain(stmt->reader_T[i].reverse());
-        // Rf_map_1 = (Rf_map_1.apply_range(stmt->reader_T[i].reverse())).reverse();
         depend_maps.push_back(Rf_map_1);
       }
 
-      for(int i=0 ; i<depend_maps.size() ; i++)
-      {
-        auto temp = (E.apply_domain(stmt->final_F).apply_domain(depend_maps[i].reverse()));  // Q's
-        // temp = temp.lexmax();
+      for (int i = 0; i < depend_maps.size(); i++) {
+        auto temp = (E.apply_domain(stmt->final_F)
+                         .apply_domain(depend_maps[i].reverse())); // Q's
         stmt->read_dependency_maps.push_back(temp);
-        // stmt->read_dependency_maps.push_back(depend_maps[i]);
       }
     }
   }
-  // getSelfDependency();
-
 }
 
 Scop::ScopStatistics Scop::getStatistics() const {
@@ -3114,9 +3038,6 @@ void ScopInfoWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool ScopInfoWrapperPass::runOnFunction(Function &F) {
-
-  errs() << "\n***************\nEnter ScopInfoWrapperPass\n***************\n";
-  errs() << F.getName() << "\n";
   auto &SD = getAnalysis<ScopDetectionWrapperPass>().getSD();
   auto &SE = getAnalysis<ScalarEvolutionWrapperPass>().getSE();
   auto &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
@@ -3127,10 +3048,6 @@ bool ScopInfoWrapperPass::runOnFunction(Function &F) {
   auto &ORE = getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE();
 
   Result.reset(new ScopInfo{DL, SD, SE, LI, AA, DT, AC, ORE});
-
-  // raw_ostream &output = llvm::outs();
-  // print(output, F.getParent());
-  errs() << "Exit ScopInfoWrapperPass\n";
 
   return false;
 }

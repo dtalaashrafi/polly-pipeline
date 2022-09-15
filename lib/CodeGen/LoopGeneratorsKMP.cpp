@@ -75,13 +75,10 @@ void ParallelLoopGeneratorKMP::deployParallelExecution(Function *SubFn,
 }
 
 // pipeline (*)
-void ParallelLoopGeneratorKMP::deployPipelineExecution(Function *SubFn,
-                                                       Value *SubFnParam,
-                                                       Value *LB, Value *UB,
-                                                       Value *Stride, Value *OutDepend,
-                                                       Value *OutIndex, Value *InDepend, 
-                                                       Value *InIndex ,Value *Size,
-                                                       Value *DependNum) {
+void ParallelLoopGeneratorKMP::deployPipelineExecution(
+    Function *SubFn, Value *SubFnParam, Value *LB, Value *UB, Value *Stride,
+    Value *OutDepend, Value *OutIndex, Value *InDepend, Value *InIndex,
+    Value *Size, Value *DependNum) {
   // Inform OpenMP runtime about the number of threads if greater than zero
   if (PollyNumThreads > 0) {
     Value *GlobalThreadID = createCallGlobalThreadNum();
@@ -92,21 +89,16 @@ void ParallelLoopGeneratorKMP::deployPipelineExecution(Function *SubFn,
   createCallSpawnThreads(SubFn, SubFnParam, LB, UB, Stride);
 }
 
-
 // pipeline(*)
 
-std::tuple<Value *, Function *> 
-ParallelLoopGeneratorKMP::createGetDependFn(Value *LB, Value *UB, Value *Stride, 
-                                            SetVector<Value *> &UsedValues,
-                                            ValueMapT &Map, BasicBlock::iterator *LoopBody)
-{
+std::tuple<Value *, Function *> ParallelLoopGeneratorKMP::createGetDependFn(
+    Value *LB, Value *UB, Value *Stride, SetVector<Value *> &UsedValues,
+    ValueMapT &Map, BasicBlock::iterator *LoopBody) {
   errs() << "function for finding depends\n";
 }
 
-
 // pipeline (*) //depend
-Function *ParallelLoopGeneratorKMP::prepareDependFnDefinition(Function *F)  
-{  
+Function *ParallelLoopGeneratorKMP::prepareDependFnDefinition(Function *F) {
   // NOTE: change InternalLinkage to ExternalLinkage in the first step.
   FunctionType *FT =
       FunctionType::get(Builder.getInt32Ty(), {Builder.getInt8PtrTy()}, false);
@@ -400,10 +392,9 @@ void ParallelLoopGeneratorKMP::createCallPushNumThreads(Value *GlobalThreadID,
 
 // pipeline (*)
 // to be removed ...
-std::tuple<Value *, Function *>
-ParallelLoopGeneratorKMP::createSubFnPipeline(Value *SequentialLoopStride,
-                                      AllocaInst *StructData,
-                                      SetVector<Value *> Data, ValueMapT &Map) {
+std::tuple<Value *, Function *> ParallelLoopGeneratorKMP::createSubFnPipeline(
+    Value *SequentialLoopStride, AllocaInst *StructData,
+    SetVector<Value *> Data, ValueMapT &Map) {
   Function *SubFn = createSubFnDefinition();
   LLVMContext &Context = SubFn->getContext();
 
@@ -585,7 +576,6 @@ ParallelLoopGeneratorKMP::createSubFnPipeline(Value *SequentialLoopStride,
 
   return std::make_tuple(IV, SubFn);
 }
-
 
 void ParallelLoopGeneratorKMP::createCallStaticInit(Value *GlobalThreadID,
                                                     Value *IsLastPtr,

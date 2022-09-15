@@ -1634,14 +1634,13 @@ public:
   /// @see ScopBuilder::ensureValueRead(Value*,ScopStmt*)
   MemoryAccess *ensureValueRead(Value *V);
 
-
   // pipeline (*)
   // TODO: make these maps private, with public functions to access them
   // add vector for keeping relation T
-  int pipeline_id; //uniqe id assigned to the stmt to be pipelined
+  int pipeline_id; // uniqe id assigned to the stmt to be pipelined
 
-  std::vector<isl::map> reader_T;    // ____<_____ if it reads
-  std::vector<isl::map> writer_T;   // ____>_____ if it writes
+  std::vector<isl::map> reader_T; // ____<_____ if it reads
+  std::vector<isl::map> writer_T; // ____>_____ if it writes
   std::vector<isl::set> sources_domain;
   std::vector<int> sources_id;
 
@@ -2792,7 +2791,6 @@ public:
   void getFinalE();
   void getSelfDependency();
   void getDependencyMaps();
-
 };
 
 /// Print Scop scop to raw_ostream OS.

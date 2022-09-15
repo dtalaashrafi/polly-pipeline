@@ -85,31 +85,19 @@ Value *polly::createLoop(Value *LB, Value *UB, Value *Stride,
                          ICmpInst::Predicate Predicate,
                          ScopAnnotator *Annotator, bool Parallel, bool UseGuard,
                          bool LoopVectDisabled) {
-
-  errs() << "Enter createloop\n";
   Function *F = Builder.GetInsertBlock()->getParent();
   LLVMContext &Context = F->getContext();
-
-  // F->dump();
-
   assert(LB->getType() == UB->getType() && "Types of loop bounds do not match");
   IntegerType *LoopIVType = dyn_cast<IntegerType>(UB->getType());
-  UB->dump();
   assert(LoopIVType && "UB is not integer?");
 
   BasicBlock *BeforeBB = Builder.GetInsertBlock();
-  errs() << "IINNSSERRT BLOCKKK\n";
-  BeforeBB->dump();
+
   BasicBlock *GuardBB =
       UseGuard ? BasicBlock::Create(Context, "polly.loop_if", F) : nullptr;
   BasicBlock *HeaderBB = BasicBlock::Create(Context, "polly.loop_header", F);
-  // errs() << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n";    
-  // errs() << F->getName();
   BasicBlock *PreHeaderBB =
       BasicBlock::Create(Context, "polly.loop_preheader", F);
-  
-  // errs() << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n";
-
 
   // Update LoopInfo
   Loop *OuterLoop = LI.getLoopFor(BeforeBB);
@@ -127,9 +115,6 @@ Value *polly::createLoop(Value *LB, Value *UB, Value *Stride,
   }
 
   NewLoop->addBasicBlockToLoop(HeaderBB, LI);
-
-  // errs() << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n";
-
   // Notify the annotator (if present) that we have a new loop, but only
   // after the header block is set.
   if (Annotator)
@@ -209,26 +194,21 @@ Value *ParallelLoopGenerator::createParallelLoop(
 
   // Execute the prepared subfunction in parallel.
   deployParallelExecution(SubFn, SubFnParam, LB, UB, Stride);
-  errs() << "Finish\n";
   return IV;
 }
 
 // pipeline (*)
 Value *ParallelLoopGenerator::createPipelineLoop(
     Value *LB, Value *UB, Value *Stride, SetVector<Value *> &UsedValues,
-    ValueMapT &Map, BasicBlock::iterator *LoopBody, Value *OutDepend, Value *OutIndex,
-    Value *InDepend, Value *InIndex, Value *DependNum) 
-{
-  errs() << "Enter create pipeline loop\n";
-  
+    ValueMapT &Map, BasicBlock::iterator *LoopBody, Value *OutDepend,
+    Value *OutIndex, Value *InDepend, Value *InIndex, Value *DependNum) {
   AllocaInst *Struct = storeValuesIntoStruct(UsedValues);
-  BasicBlock::iterator BeforeLoop = Builder.GetInsertPoint(); 
+  BasicBlock::iterator BeforeLoop = Builder.GetInsertPoint();
 
   // get the size of the struct here, pass it to deploy
   // Constant *StructSize = ConstantExpr::getSizeOf(Struct->getAllocatedType());
   const DataLayout &DL = Builder.GetInsertBlock()->getModule()->getDataLayout();
   int Size = DL.getTypeAllocSize(Struct->getAllocatedType());
-  errs() << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& : " << Size << "\n";
 
   auto int_type32 = llvm::IntegerType::getInt32Ty(Builder.getContext());
   auto StructSize = ConstantInt::get(int_type32, Size);
@@ -247,14 +227,14 @@ Value *ParallelLoopGenerator::createPipelineLoop(
   UB = Builder.CreateAdd(UB, ConstantInt::get(LongType, 1));
 
   // Execute the prepared subfunction in parallel.
-  deployPipelineExecution(SubFn, SubFnParam, LB, UB, Stride, 
-                          OutDepend, OutIndex, InDepend, InIndex, StructSize, DependNum);
+  deployPipelineExecution(SubFn, SubFnParam, LB, UB, Stride, OutDepend,
+                          OutIndex, InDepend, InIndex, StructSize, DependNum);
 
   return IV;
 }
 
 Function *ParallelLoopGenerator::createSubFnDefinition() {
-  Function *F = Builder.GetInsertBlock()->getParent(); //task_func
+  Function *F = Builder.GetInsertBlock()->getParent(); // task_func
   Function *SubFn = prepareSubFnDefinition(F);
 
   // Certain backends (e.g., NVPTX) do not support '.'s in function names.
@@ -269,11 +249,9 @@ Function *ParallelLoopGenerator::createSubFnDefinition() {
   return SubFn;
 }
 
-
 // pipeline (*) //depend
-Function *ParallelLoopGenerator::createDependFnDefinition() 
-{
-  Function *F = Builder.GetInsertBlock()->getParent(); //task_func
+Function *ParallelLoopGenerator::createDependFnDefinition() {
+  Function *F = Builder.GetInsertBlock()->getParent(); // task_func
   Function *SubFn = prepareDependFnDefinition(F);
 
   // Certain backends (e.g., NVPTX) do not support '.'s in function names.
@@ -289,7 +267,7 @@ Function *ParallelLoopGenerator::createDependFnDefinition()
 }
 
 // pipeline (*)
-// It is happening here ...
+
 AllocaInst *
 ParallelLoopGenerator::storeValuesIntoStruct(SetVector<Value *> &Values) {
   SmallVector<Type *, 8> Members;

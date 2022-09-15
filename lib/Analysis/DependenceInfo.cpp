@@ -842,7 +842,7 @@ PreservedAnalyses
 DependenceInfoPrinterPass::run(Scop &S, ScopAnalysisManager &SAM,
                                ScopStandardAnalysisResults &SAR,
                                SPMUpdater &U) {
-                                 
+
   auto &DI = SAM.getResult<DependenceAnalysis>(S, SAR);
 
   if (auto d = DI.D[OptAnalysisLevel].get()) {
@@ -930,8 +930,7 @@ const Dependences &DependenceInfoWrapperPass::recomputeDependences(
 
 bool DependenceInfoWrapperPass::runOnFunction(Function &F) {
   auto &SI = *getAnalysis<ScopInfoWrapperPass>().getSI();
-  for (auto &It : SI) 
-  {
+  for (auto &It : SI) {
     assert(It.second && "Invalid SCoP object!");
     recomputeDependences(It.second.get(), Dependences::AL_Access);
   }

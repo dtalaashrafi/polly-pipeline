@@ -648,147 +648,20 @@ static void walkScheduleTreeForStatistics(isl::schedule Schedule, int Version) {
 
 // pipeline (*)
 
-// TODO: remove this function.
-isl::map get_pipeline_relation(isl::map rmap, isl::map wmap) {
-  errs() << "***"
-         << "\n";
-  errs() << "Enter get_pipeline_relation\n";
-
-  // isl_ctx * ctx = rmap.get_ctx().get();
-  // auto map_read = rmap.copy();
-  //  auto map_write = wmap.copy();
-
-  auto write_reverse = wmap.reverse();
-  auto K = rmap.apply_range(write_reverse);
-  auto K_temp = K.lexmax();
-  auto D = K.domain();
-  auto D1 = D.lex_ge_set(D);
-  auto L1 = D1.apply_range(K_temp);
-  auto L = L1.lexmax();
-  auto L_reverse = L.reverse();
-  auto T = L_reverse.lexmax();
-
-  return T;
-}
-
-// TODO: remove this function.
-isl::map get_blocks(isl::set s, isl::map m, int choose) {
-  //  isl_set *s_copy = isl_set_copy(s);
-  //  isl_map *m_copy = isl_map_copy(m);
-
-  isl::set D;
-  if (choose == 0)
-    D = m.domain();
-  else if (choose == 1)
-    D = m.range();
-
-  auto Dp1 = D.lex_ge_set(s);
-  auto Dp = Dp1.reverse();
-  auto E = Dp.lexmin();
-  auto Ed = E.domain();
-
-  // if the whole domain is not covered.
-  if (s.is_equal(Ed) == 0) {
-    auto last_elem = s.lexmax();
-    auto rem_elems = s.subtract(Ed);
-    auto comp_E = isl::map::from_domain_and_range(rem_elems, last_elem);
-    E = E.unite(comp_E);
-  }
-
-  return E;
-}
-
-// TODO: to be removed
-struct dummys {
-  int in_out;
-  isl_pw_multi_aff *d;
-};
-
-// TODO: replace this in the file
-typedef struct depends
-{
+typedef struct depends {
   int is_source_only = 0;
   int out_index;
   int *in_index;
   int num_in_index;
-  isl_pw_multi_aff *out_pw; //writes
-  isl_pw_multi_aff_list *in_pw; //reads
+  isl_pw_multi_aff *out_pw;     // writes
+  isl_pw_multi_aff_list *in_pw; // reads
 } depends;
-
-
-// Map T is between source iterations and target iterations.
-// It is interpreted as: having I[i,j]->J[i',j'] in T, where
-// i' and j' are functions of i and j, after the iteration [i,j]
-// of the source, we can run up to [i',j'] of target.
-// What we do in this function is to map I[i,j] and J[i',j']
-// to an "imaginary" array [i,j]. Then in the code generation
-// using IN and OUT dependencies, we can syncronize blocks.
-// TODO: rest of iterations, kind of an early exit.
-
-isl::id get_depend_pw(isl::map T, isl::set I, isl::set J, int choose) {
-  errs() << "Enter computing pw\n";
-  T = T.coalesce();
-
-  // the lexmax is for considering the last block and all.
-  isl::map Er = (T.domain().unite(I.lexmax())).flatten_map().coalesce();
-
-  errs() << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
-            "$$$$$$$$$$$$$$$\n";
-  T.dump();
-
-  auto ctx = T.get_ctx();
-  isl::val valm1(ctx, -1);
-
-  isl::set Erdom = Er.domain();
-  isl::set ErmI1 = I.subtract(Erdom);              // uncovered
-  isl::set ErmI = ErmI1.unite(ErmI1.complement()); // drop all constraints
-
-  auto dim_count = ErmI1.dim(isl::dim::set);
-
-  for (int dim = 0; dim < dim_count; dim++)
-    ErmI = ErmI.fix_val(isl::dim::set, dim, valm1);
-
-  struct dummys *dummy = (struct dummys *)malloc(sizeof(struct dummys));
-  auto new_id = isl::id::alloc(ctx, "task", dummy);
-
-  if (choose == 0) {
-    isl::map final = isl::map::from_domain_and_range(ErmI1, ErmI);
-    final = final.unite(Er);
-    Er = Er.set_tuple_name(isl::dim::out, "D");
-    isl::pw_multi_aff pw2 = isl::pw_multi_aff::from_map(final);
-    dummy->d = pw2.release();
-    dummy->in_out = 0;
-    return new_id;
-  }
-
-  if (choose == 1) {
-    isl::map Tr = T.reverse();
-    isl::set Tdom = Tr.domain();
-    isl::set TmJ1 = J.subtract(Tdom); // uncovered
-    isl::map final =
-        isl::map::from_domain_and_range(TmJ1, ErmI); // use I for complement
-    final = final.unite(Tr);
-    T = T.set_tuple_name(isl::dim::in, "D");
-    isl::pw_multi_aff pw1 = isl::pw_multi_aff::from_map(final);
-    dummy->d = pw1.release();
-    dummy->in_out = 1;
-    return new_id;
-  }
-
-  // add an error else
-}
 
 isl::schedule get_pipeline_schedule_per_loop_nest(isl::map E, isl::id new_id) {
 
-  errs() << "Enter scheduling\n\n";
-
   isl::ctx ctx = E.get_ctx();
-  // auto new_id = isl::id::alloc(ctx, "task", &Epw);
   isl::id new_id_begin(ctx, "taskBegin");
 
-  // auto pw = (struct dummys*)new_id.get_user();
-  // errs() << "from scheduling\n" << pw[0].n <<"\n";
-  // isl_pw_multi_aff_dump(pw[0].d);
   E = E.coalesce();
   isl::set rE = E.range();
   isl::set dE = E.domain();
@@ -796,30 +669,22 @@ isl::schedule get_pipeline_schedule_per_loop_nest(isl::map E, isl::id new_id) {
   isl::union_set rE_uset(rE);
   isl::union_set dE_uset(dE);
 
-  errs() << "Enter coalesce \n";
   isl::map rE_map = rE.flatten_map().coalesce();
-  errs() << "first\n";
   isl::map dE_map = dE.flatten_map().coalesce();
-  errs() << "second\n";
 
   isl::union_map E_umap(E);
   isl::union_map rE_umap(rE_map);
   isl::union_map dE_umap(dE_map);
 
-  errs() << "finish prepration\n";
-
-  // auto ps = isl::multi_union_pw_aff::from_union_map(E_umap);
-  // errs() << "first\n";
   auto ps1 = isl::multi_union_pw_aff::from_union_map(dE_umap);
-  errs() << "first\n";
   auto ps2 = isl::multi_union_pw_aff::from_union_map(rE_umap);
 
   auto r_sch_node = isl::schedule_node::from_domain(rE_uset);
   isl::schedule_node r_sch_node_child = r_sch_node.child(0);
 
   auto r_h_node = r_sch_node_child.insert_partial_schedule(ps2);
-  isl::union_set options(
-      isl::set(ctx, "{ atomic[i0] : 0 <= i0 <= 1 }")); // TODO: generalize dimensions
+  isl::union_set options(isl::set(
+      ctx, "{ atomic[i0] : 0 <= i0 <= 1 }")); // TODO: generalize dimensions
   r_h_node = r_h_node.band_set_ast_build_options(options);
   r_h_node = r_h_node.insert_mark(new_id_begin);
   auto r_h = r_h_node.get_schedule();
@@ -834,54 +699,18 @@ isl::schedule get_pipeline_schedule_per_loop_nest(isl::map E, isl::id new_id) {
 
   auto final_sch = r_h.expand(contraction, exp_sch);
 
-  // isl_schedule_copy(r_h.get());
-  // errs() << "sch domain  " << final_sch.get_domain();
-
-  //  return isl::manage(final_sch);
   return final_sch;
 }
 
-// TODO: remove this function
-isl::schedule schedule_pipeline(isl::map mem_acc_rd, isl::map mem_acc_wr,
-                                isl::set rd_dom, isl::set wr_dom) {
-  errs() << "****"
-         << "\n";
-
-  errs() << "Enter schedule_pipeline\n";
-
-  auto rd_dom_map = rd_dom.flatten_map();
-  auto wr_dom_map = wr_dom.flatten_map();
-
-  mem_acc_rd = mem_acc_rd.apply_domain(rd_dom_map);
-  mem_acc_wr = mem_acc_wr.apply_domain(wr_dom_map);
-
-  isl::map T = get_pipeline_relation(mem_acc_rd, mem_acc_wr);
-  isl::map E = get_blocks(wr_dom, T, 0);
-  isl::map F = get_blocks(rd_dom, T, 1);
-
-  auto Epw = get_depend_pw(T, wr_dom, rd_dom, 0);
-  auto Fpw = get_depend_pw(T, wr_dom, rd_dom, 1);
-
-  isl::schedule E_sch = get_pipeline_schedule_per_loop_nest(E, Epw);
-  isl::schedule F_sch = get_pipeline_schedule_per_loop_nest(F, Fpw);
-
-  auto final_map = E_sch.sequence(F_sch);
-
-  return final_map;
-}
-
-
-// TODO: take care of the old version
-isl::id get_depend_pw_new(ScopStmt &stmt) 
-{
+isl::id get_depend_pw_new(ScopStmt &stmt) {
 
   // to generelize, the number 1 should be equal to the total
   // number of stmts in the scop. get that number from somewhere.
-  auto ctx = stmt.getIslCtx(); 
+  auto ctx = stmt.getIslCtx();
   depends *dep = (depends *)malloc(sizeof(depends));
   dep->num_in_index = stmt.sources_id.size();
-  dep->in_pw = isl_pw_multi_aff_list_alloc(ctx.get(),dep->num_in_index);
-  dep->in_index = (int*) malloc(sizeof(int) * dep->num_in_index);
+  dep->in_pw = isl_pw_multi_aff_list_alloc(ctx.get(), dep->num_in_index);
+  dep->in_index = (int *)malloc(sizeof(int) * dep->num_in_index);
   auto new_id = isl::id::alloc(ctx, "task", dep);
 
   auto I = stmt.getDomain();
@@ -889,10 +718,6 @@ isl::id get_depend_pw_new(ScopStmt &stmt)
   // for considering the last block.
   isl::map Er = (stmt.write_dependency_map).unite(I.lexmax().flatten_map());
   isl::val valm1(ctx, -1);
-
-  errs() << "************MMMMAAAAPPP:\n";
-  Er.dump();
-
   isl::set Erdom = Er.domain();
   isl::set ErmI1 = I.subtract(Erdom);              // uncovered
   isl::set ErmI = ErmI1.unite(ErmI1.complement()); // drop all constraints
@@ -907,106 +732,60 @@ isl::id get_depend_pw_new(ScopStmt &stmt)
 
   dep->out_pw = pw2.release();
 
-  errs() << "finish getting out dependencies\n";
-  ///////////////////////////////////
-
   dep->out_index = stmt.pipeline_id;
-  for(int i=0 ; i < dep->num_in_index ; i++)
+  for (int i = 0; i < dep->num_in_index; i++)
     dep->in_index[i] = stmt.sources_id[i]; // order should be kept.
 
   ////////////////////////////////////////
-  
-  if(dep->num_in_index != 0)
-  {
-    errs() << "NUMBER:  " << dep->num_in_index << "\n";
-    for(int i=0 ; i < dep->num_in_index ; i++)
-    {
-      errs() << "Enter for " << i << "\n";
+
+  if (dep->num_in_index != 0) {
+    for (int i = 0; i < dep->num_in_index; i++) {
       auto JI = stmt.sources_domain[i];
       JI = JI.unite(JI.complement());
-      errs() << "source domain\n";
-      JI.dump();
       auto dim_count = JI.dim(isl::dim::set);
       for (int dim = 0; dim < dim_count; dim++)
         JI = JI.fix_val(isl::dim::set, dim, valm1);
-      
+
       auto J = stmt.getDomain();
-      errs() << "domain\n";
-      J.unite(J.complement()).dump();
 
       isl::map Tr = stmt.read_dependency_maps[i].reverse();
-      errs() << "************MMMMAAAAPPP:\n";
-      Tr.dump();
-
-      // errs() << "Tr domain\n";
-      // Tr.domain().unite(Tr.domain().complement()).dump();
-
       isl::set Tdom = Tr.domain();
       isl::set TmJ1 = J.subtract(Tdom); // uncovered
-      isl::map final = isl::map::from_domain_and_range(TmJ1, JI); // use I for complement
-      errs() << "begin unite\n";
+      isl::map final =
+          isl::map::from_domain_and_range(TmJ1, JI); // use I for complement
       final = final.unite(Tr);
-      errs() << "************MMMMAAAAPPP:\n";
-      final.dump();
-
 
       isl::pw_multi_aff pw1 = isl::pw_multi_aff::from_map(final);
-      errs() << "adding to list\n";
       isl_pw_multi_aff_list_add(dep->in_pw, pw1.release());
     }
-  }
-  else
-  {
+  } else {
     dep->is_source_only = 1;
   }
- 
+
   return new_id;
 }
 
-
-
-
-
-// TODO: remove the old function and change the name
-isl::schedule schedule_pipeline_new(Scop &S) 
-{
-  errs() << "****" << "\n";
-
-  errs() << "Enter schedule_pipeline\n";
-
-  // do these for statements.
-  // auto ctx = S.getIslCtx(); 
+isl::schedule schedule_pipeline_new(Scop &S) {
   std::vector<isl::schedule> sch_vec;
 
-  for(auto stmt = S.begin() ; stmt != S.end() ; stmt++)
-  {
-    errs() << "**************** enter the for loop\n";
+  for (auto stmt = S.begin(); stmt != S.end(); stmt++) {
     auto new_id = get_depend_pw_new(*stmt);
-    errs() << "finish computing id\n";
-    isl::schedule sch = get_pipeline_schedule_per_loop_nest(stmt->final_E, new_id);
+    isl::schedule sch =
+        get_pipeline_schedule_per_loop_nest(stmt->final_E, new_id);
     sch_vec.push_back(sch);
-    errs() << "***************** exit the for loop\n";
   }
-  errs() << "Exit loop of computing schedules\n";
 
   auto final_sch = sch_vec[0];
-  for(int i=1 ; i < sch_vec.size() ; i++)
+  for (int i = 1; i < sch_vec.size(); i++)
     final_sch = final_sch.sequence(sch_vec[i]);
 
   return final_sch;
 }
 
-
-
-
 static bool runIslScheduleOptimizer(
     Scop &S,
     function_ref<const Dependences &(Dependences::AnalysisLevel)> GetDeps,
     TargetTransformInfo *TTI, isl::schedule &LastSchedule) {
-
-  errs() << "***********************&&&&&&&&&&&&"
-         << "\n";
-
   // Skip SCoPs in case they're already optimised by PPCGCodeGeneration
   if (S.isToBeSkipped())
     return false;
@@ -1063,26 +842,16 @@ static bool runIslScheduleOptimizer(
     return false;
   }
 
-  // pipeline (*)
-  /*
-  Schedule = getPipelineWithIsl(?..?);
-  Don't do anything else
-  Assign schedule to the Scop and return
-  */
-
-  errs() << "PipelineLoops: " << PipelineLoops << '\n';
   if (PipelineLoops == "yes") {
     errs() << S << "\n";
 
     int temp_pipe_id = 0;
-    for(auto stmt = S.begin() ; stmt != S.end() ; stmt++)
-    {
+    for (auto stmt = S.begin(); stmt != S.end(); stmt++) {
       stmt->pipeline_id = temp_pipe_id;
       temp_pipe_id++;
     }
 
-    // S.multiStmt();
-    S.getPipelineGraph(); //we can't use dependencies, as we want stmt->MemRef.
+    S.getPipelineGraph(); // we can't use dependencies, as we want stmt->MemRef.
     S.getPipelineRelations();
     S.getPipelineBlocks();
     S.getFinalF();
@@ -1092,46 +861,9 @@ static bool runIslScheduleOptimizer(
     S.setScheduleTree(new_sch);
     S.markAsOptimized();
 
-    errs() << "new schedule" << "\n";
+    errs() << "new schedule"
+           << "\n";
     errs() << S << "\n";
-    // errs() << S.getScheduleTree() << "\n";
-
-    // auto s_acc_func = S.access_functions();
-    // auto s_domains = S.getDomains().get_set_list();
-
-    // // FIXEIT: find a general way.
-    // auto rd_dom = s_domains.get_at(1);
-    // auto wr_dom = s_domains.get_at(0);
-
-    // auto raw_dep = D.getDependences(2);
-    // errs() << "*********** \n" << raw_dep << "\n";
-    // // can not use dependencies, as they don't cover the whole
-    // // iteration domain.(maybe if I change st in the high level func.)
-    // // errs() << "domain\n";
-    // // errs() << raw_dep.domain();
-    // // errs() << "range\n";
-    // // errs() << raw_dep.range();
-
-    // isl_ctx *i_ctx = isl_ctx_alloc();
-    // isl::ctx ctx(i_ctx);
-
-    // // apply read and write maps to the dependency.
-    // // can we get the source map and destination map of dependency?
-
-    // // this part about memory access should be reconsidered
-    // // TODO: generalize this
-    // auto begin_acc = s_acc_func.begin(); //<<== it's a vector
-    // auto mem_acc_wr =
-    //     begin_acc[1].get()->getAccessRelation(); //<<== isl::noexceptions
-    // auto mem_acc_rd =
-    //     begin_acc[3].get()->getAccessRelation(); //<<== isl::noexceptions
-
-    // auto sch_map = schedule_pipeline(mem_acc_rd, mem_acc_wr, rd_dom, wr_dom);
-    // S.setScheduleTree(sch_map);
-    // S.markAsOptimized();
-
-    // errs() << "new schedule" << "\n";
-    // errs() << S.getScheduleTree() << "\n";
 
     return false;
 

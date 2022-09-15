@@ -29,13 +29,12 @@ void ParallelLoopGeneratorGOMP::createCallSpawnThreads(Value *SubFn,
     GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
 
     Type *Params[] = {PointerType::getUnqual(FunctionType::get(
-                      Builder.getVoidTy(), Builder.getInt8PtrTy(), false)),
+                          Builder.getVoidTy(), Builder.getInt8PtrTy(), false)),
                       Builder.getInt8PtrTy(),
                       Builder.getInt32Ty(),
                       LongType,
                       LongType,
-                      LongType
-                      };
+                      LongType};
 
     FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), Params, false);
     F = Function::Create(Ty, Linkage, Name, M);
@@ -58,14 +57,10 @@ void ParallelLoopGeneratorGOMP::deployParallelExecution(Function *SubFn,
 }
 
 // pipeline (*)
-void ParallelLoopGeneratorGOMP::deployPipelineExecution(Function *SubFn,
-                                                        Value *SubFnParam,
-                                                        Value *LB, Value *UB,
-                                                        Value *Stride, Value *OutDepend, 
-                                                        Value *OutIndex, Value *InDepend, 
-                                                        Value *InIndex,Value *Size,
-                                                        Value *DependNum) 
-{
+void ParallelLoopGeneratorGOMP::deployPipelineExecution(
+    Function *SubFn, Value *SubFnParam, Value *LB, Value *UB, Value *Stride,
+    Value *OutDepend, Value *OutIndex, Value *InDepend, Value *InIndex,
+    Value *Size, Value *DependNum) {
   static int num = 0;
   const std::string Name = "make_task";
   //  + std::to_string(num);
@@ -74,45 +69,38 @@ void ParallelLoopGeneratorGOMP::deployPipelineExecution(Function *SubFn,
   Function *F = M->getFunction(Name);
   // Function *F1 = M->getFunction(Name1);
 
-  if (!F) 
-  // || !F1) 
+  if (!F)
+  // || !F1)
   {
     GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
 
     Type *Params[] = {PointerType::getUnqual(FunctionType::get(
-                      Builder.getVoidTy(), Builder.getInt8PtrTy(), false)),
-                      Builder.getInt8PtrTy(), Builder.getInt64Ty(),
-                      Builder.getInt32Ty(), PointerType::get( Builder.getInt64Ty(),0), 
-                      PointerType::get(Builder.getInt32Ty(),0), Builder.getInt32Ty(),
-                       Builder.getInt32Ty()};    
+                          Builder.getVoidTy(), Builder.getInt8PtrTy(), false)),
+                      Builder.getInt8PtrTy(),
+                      Builder.getInt64Ty(),
+                      Builder.getInt32Ty(),
+                      PointerType::get(Builder.getInt64Ty(), 0),
+                      PointerType::get(Builder.getInt32Ty(), 0),
+                      Builder.getInt32Ty(),
+                      Builder.getInt32Ty()};
 
-          // PointerType::get( Builder.getInt64Ty(),0), 
+    // PointerType::get( Builder.getInt64Ty(),0),
     //                   PointerType::get(Builder.getInt32Ty(),0)
 
-    //  Builder.getInt64Ty(), 
-                      // Builder.getInt32Ty()
-      
+    //  Builder.getInt64Ty(),
+    // Builder.getInt32Ty()
+
     FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), Params, false);
     F = Function::Create(Ty, Linkage, Name, M);
     // F1 = Function::Create(Ty, Linkage, Name1, M);
   }
 
-  Value *Args[] = {SubFn, SubFnParam, OutDepend, OutIndex, InDepend, InIndex ,Size, DependNum};
+  Value *Args[] = {SubFn,    SubFnParam, OutDepend, OutIndex,
+                   InDepend, InIndex,    Size,      DependNum};
   Builder.CreateCall(F, Args);
-  errs() << "###################### From deploy:\n";
-  // F->dump();
-  
-    // TODO: check if it is always correct, 
-  // REMEMBER: it is for considering the last block, in case of blocking
-  // errs() << "EXIITT BLOOCKK " << Exit->getName() << "\n";
-  // errs() << Exit->getTerminator()->getSuccessor(1)->getName() << "\n";
-  // Builder.SetInsertPoint(Exit->getTerminator()->getSuccessor(1)->getTerminator());
-  // Builder.CreateCall(F1, Args);
-
 }
 
-
-Function *ParallelLoopGeneratorGOMP::prepareSubFnDefinition(Function *F) const {  
+Function *ParallelLoopGeneratorGOMP::prepareSubFnDefinition(Function *F) const {
   FunctionType *FT =
       FunctionType::get(Builder.getVoidTy(), {Builder.getInt8PtrTy()}, false);
   Function *SubFn = Function::Create(FT, Function::InternalLinkage,
@@ -221,16 +209,13 @@ ParallelLoopGeneratorGOMP::createSubFn(Value *Stride, AllocaInst *StructData,
 
   Builder.SetInsertPoint(&*LoopBody);
 
-  // SubFn->dump();
-
   return std::make_tuple(IV, SubFn);
 }
 
 // pipeline (*)
-std::tuple<Value *, Function *>
-ParallelLoopGeneratorGOMP::createSubFnPipeline(Value *Stride, AllocaInst *StructData,
-                                       SetVector<Value *> Data,
-                                       ValueMapT &Map) {
+std::tuple<Value *, Function *> ParallelLoopGeneratorGOMP::createSubFnPipeline(
+    Value *Stride, AllocaInst *StructData, SetVector<Value *> Data,
+    ValueMapT &Map) {
   if (PollyScheduling != OMPGeneralSchedulingType::Runtime) {
     // User tried to influence the scheduling type (currently not supported)
     errs() << "warning: Polly's GNU OpenMP backend solely "
@@ -243,17 +228,16 @@ ParallelLoopGeneratorGOMP::createSubFnPipeline(Value *Stride, AllocaInst *Struct
               "supports the default chunk size.\n";
   }
 
-  // errs() << "create sub function pipeline\n";
-
   Function *SubFn = createSubFnDefinition();
   LLVMContext &Context = SubFn->getContext();
-  Value *IV ;
+  Value *IV;
 
   // Store the previous basic block.
   BasicBlock *PrevBB = Builder.GetInsertBlock();
 
   // Create basic blocks.
-  BasicBlock *HeaderBB = BasicBlock::Create(Context, "polly.pipe.setup", SubFn); //it is added to to subfn
+  BasicBlock *HeaderBB = BasicBlock::Create(Context, "polly.pipe.setup",
+                                            SubFn); // it is added to to subfn
   BasicBlock *TaskBB = BasicBlock::Create(Context, "polly.pipe.task", SubFn);
   BasicBlock *ExitBB = BasicBlock::Create(Context, "polly.pipe.exit", SubFn);
 
@@ -266,7 +250,8 @@ ParallelLoopGeneratorGOMP::createSubFnPipeline(Value *Stride, AllocaInst *Struct
   Value *UserContext = Builder.CreateBitCast(
       &*SubFn->arg_begin(), StructData->getType(), "polly.pipe.userContext");
 
-  extractValuesFromStruct(Data, StructData->getAllocatedType(), UserContext, Map);
+  extractValuesFromStruct(Data, StructData->getAllocatedType(), UserContext,
+                          Map);
   Builder.CreateBr(TaskBB);
 
   Builder.SetInsertPoint(TaskBB);
@@ -276,8 +261,6 @@ ParallelLoopGeneratorGOMP::createSubFnPipeline(Value *Stride, AllocaInst *Struct
   Builder.CreateRetVoid();
   // Builder.SetInsertPoint(&*LoopBody);
 
-  // SubFn->dump();
-
   Builder.SetInsertPoint((TaskBB->getTerminator()));
 
   return std::make_tuple(IV, SubFn);
@@ -285,28 +268,27 @@ ParallelLoopGeneratorGOMP::createSubFnPipeline(Value *Stride, AllocaInst *Struct
 
 // pipeline(*) // depend
 
-std::tuple<Value *, Function *> 
-ParallelLoopGeneratorGOMP::createGetDependFn(Value *LB, Value *UB, Value *Stride, 
-                                             SetVector<Value *> &UsedValues,
-                                             ValueMapT &Map, BasicBlock::iterator *LoopBody)
-{
-  errs() << "function for finding depends\n";
-  // create a new function for computing depends
-
+std::tuple<Value *, Function *> ParallelLoopGeneratorGOMP::createGetDependFn(
+    Value *LB, Value *UB, Value *Stride, SetVector<Value *> &UsedValues,
+    ValueMapT &Map, BasicBlock::iterator *LoopBody) {
   Function *DependFn = createDependFnDefinition();
   LLVMContext &Context = DependFn->getContext();
   AllocaInst *StructData = storeValuesIntoStruct(UsedValues);
 
   // Create basic blocks.
-  BasicBlock *HeaderBB = BasicBlock::Create(Context, "polly.pipe.depend.setup", DependFn); 
-  BasicBlock *ComputeBB = BasicBlock::Create(Context, "polly.pipe.depend.compute", DependFn);
-  BasicBlock *ExitBB = BasicBlock::Create(Context, "polly.pipe.depend.exit", DependFn);
+  BasicBlock *HeaderBB =
+      BasicBlock::Create(Context, "polly.pipe.depend.setup", DependFn);
+  BasicBlock *ComputeBB =
+      BasicBlock::Create(Context, "polly.pipe.depend.compute", DependFn);
+  BasicBlock *ExitBB =
+      BasicBlock::Create(Context, "polly.pipe.depend.exit", DependFn);
 
   Builder.SetInsertPoint(HeaderBB);
-  Value *UserContext = Builder.CreateBitCast(
-      &*DependFn->arg_begin(), StructData->getType(), "polly.pipe.depend.userContext");
-  extractValuesFromStruct(UsedValues, StructData->getAllocatedType(), UserContext, Map);
-
+  Value *UserContext =
+      Builder.CreateBitCast(&*DependFn->arg_begin(), StructData->getType(),
+                            "polly.pipe.depend.userContext");
+  extractValuesFromStruct(UsedValues, StructData->getAllocatedType(),
+                          UserContext, Map);
 
   Builder.CreateBr(ComputeBB);
 
@@ -317,12 +299,10 @@ ParallelLoopGeneratorGOMP::createGetDependFn(Value *LB, Value *UB, Value *Stride
   Builder.CreateRetVoid();
 
   // set builder ...
-
 }
 
 // pipeline (*) //depend
-Function *ParallelLoopGeneratorGOMP::prepareDependFnDefinition(Function *F)  
-{  
+Function *ParallelLoopGeneratorGOMP::prepareDependFnDefinition(Function *F) {
   // NOTE: change InternalLinkage to ExternalLinkage in the first step.
   FunctionType *FT =
       FunctionType::get(Builder.getVoidTy(), {Builder.getInt8PtrTy()}, false);
@@ -332,7 +312,6 @@ Function *ParallelLoopGeneratorGOMP::prepareDependFnDefinition(Function *F)
   SubFn->arg_begin()->setName("polly.pipe.depend.userContext");
   return SubFn;
 }
-
 
 Value *ParallelLoopGeneratorGOMP::createCallGetWorkItem(Value *LBPtr,
                                                         Value *UBPtr) {
@@ -357,8 +336,7 @@ Value *ParallelLoopGeneratorGOMP::createCallGetWorkItem(Value *LBPtr,
 
 // pipeline (*)
 Value *ParallelLoopGeneratorGOMP::createCallGetWorkItemPipeline(Value *LBPtr,
-                                                                Value *UBPtr) 
-{
+                                                                Value *UBPtr) {
   const std::string Name = "next";
 
   Function *F = M->getFunction(Name);
@@ -377,8 +355,6 @@ Value *ParallelLoopGeneratorGOMP::createCallGetWorkItemPipeline(Value *LBPtr,
       Return, Builder.CreateZExt(Builder.getFalse(), Return->getType()));
   return Return;
 }
-
-
 
 void ParallelLoopGeneratorGOMP::createCallJoinThreads() {
   const std::string Name = "GOMP_parallel_end";
